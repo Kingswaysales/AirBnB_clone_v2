@@ -1,41 +1,73 @@
 #!/usr/bin/python3
-"""Deploy an archive of static html to my web servers with Fabric3"""
+"""
+    Script generates a .tgz archive from web_static folder and
+    distributes archive to web servers
+"""
+from fabric.operations import local, run, put, env
 
-from fabric import api
-from fabric.contrib import files
-import os
+
+env.hosts = ['34.224.71.206', '54.174.221.228']
+env.user = 'ubuntu'
 
 
-api.env.hosts = ['52.91.154.135', '54.87.207.246']
-api.env.user = 'ubuntu'
-api.env.key_filename = '~/.ssh/alx_server'
+def do_pack():
+    """
+        Function creates a .tgz archive from all files in web_static folder
+
+        Each archive will be stored in versions folder
+
+        Archive name:
+            web_static_<year><month><day><hour><minute><second>.tgz
+
+        Returns:
+            archive path if successful
+            None if fail
+    """
+    from datetime import datetime
+
+    name = "./versions/web_static_{}.tgz"
+    name = name.format(datetime.now().strftime("%Y%m%d%H%M%S"))
+    local("mkdir -p versions")
+    create = local("tar -cvzf {} web_static".format(name))
+    if create.succeeded:
+        return name
+    else:
+        return None
 
 
 def do_deploy(archive_path):
-    """Function to transfer `archive_path` to web servers.
-    Args:
-        archive_path (str): path of the .tgz file to transfer
-    Returns: True on success, False otherwise.
     """
-    if not os.path.isfile(archive_path):
+        Function distributes an archive to web servers
+
+        Returns:
+            True if operations succeed
+            False if archive_path doesn't exist or fail
+    """
+    import os
+
+    if not os.path.exists(archive_path):
         return False
-    with api.cd('/tmp'):
-        basename = os.path.basename(archive_path)
-        root, ext = os.path.splitext(basename)
-        outpath = '/data/web_static/releases/{}'.format(root)
-        try:
-            putpath = api.put(archive_path)
-            if files.exists(outpath):
-                api.run('rm -rdf {}'.format(outpath))
-            api.run('mkdir -p {}'.format(outpath))
-            api.run('tar -xzf {} -C {}'.format(putpath[0], outpath))
-            api.run('rm -f {}'.format(putpath[0]))
-            api.run('mv -u {}/web_static/* {}'.format(outpath, outpath))
-            api.run('rm -rf {}/web_static'.format(outpath))
-            api.run('rm -rf /data/web_static/current')
-            api.run('ln -sf {} /data/web_static/current'.format(outpath))
-            print('New version deployed!')
-        except:
-            return False
-        else:
-            return True
+    if not put(archive_path, "/tmp/").succeeded:
+        return False
+    filename = archive_path[9:]
+    foldername = "/data/web_static/releases/" + filename[:-4]
+    filename = "/tmp/" + filename
+    if not run('mkdir -p {}'.format(foldername)).succeeded:
+        return False
+    if not run('tar -xzf {} -C {}'.format(filename, foldername)).succeeded:
+        return False
+    if not run('rm {}'.format(filename)).succeeded:
+        return False
+    if not run('mv {}/web_static/* {}'.format(foldername,
+                                              foldername)).succeeded:
+        return False
+    if not run('rm -rf {}/web_static'.format(foldername)).succeeded:
+        return False
+    if not run('rm -rf /data/web_static/current').succeeded:
+        return False
+    return run('ln -s {} /data/web_static/current'.format(
+        foldername)).succeeded
+
+
+if __name__ == "__main__":
+    do_pack()
